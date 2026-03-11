@@ -6,7 +6,7 @@ pipeline {
     }
 
     tools {
-        terraform 'terraform'
+        terraform 'Terraform'
     }
 
     environment {
@@ -28,19 +28,15 @@ pipeline {
 
         stage('Terraform Init') {
             steps {
-                sh 'terraform init'
+                bat 'terraform init'
             }
         }
 
         stage('Drift Detection') {
             steps {
                 script {
-                    def exitCode = sh(
-                        script: '''
-                            terraform plan -detailed-exitcode \
-                              -out=tfplan.out 2>&1 | tee plan_output.txt
-                            exit $?
-                        ''',
+                    def exitCode = bat(
+                        script: 'terraform plan -detailed-exitcode -out=tfplan.out > plan_output.txt 2>&1',
                         returnStatus: true
                     )
                     env.TF_EXIT_CODE = exitCode.toString()
@@ -52,7 +48,7 @@ pipeline {
             when { expression { env.TF_EXIT_CODE == '2' } }
             steps {
                 script {
-                    sh 'terraform show -no-color tfplan.out > plan_readable.txt'
+                    bat 'terraform show -no-color tfplan.out > plan_readable.txt'
                     archiveArtifacts artifacts: 'plan_readable.txt', fingerprint: true
 
                     def planOutput = readFile('plan_readable.txt').take(1000)
