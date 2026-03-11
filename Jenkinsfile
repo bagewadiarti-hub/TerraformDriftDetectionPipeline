@@ -51,9 +51,9 @@ pipeline {
                     bat 'terraform show -no-color tfplan.out > plan_readable.txt'
                     archiveArtifacts artifacts: 'plan_readable.txt', fingerprint: true
 
-                    // Fix: convert GString to plain String before calling getBytes()
+                    // Use java.util.Base64 - allowed in Jenkins sandbox
                     String authString  = env.JIRA_USER + ':' + env.JIRA_TOKEN
-                    String authEncoded = authString.bytes.encodeBase64().toString()
+                    String authEncoded = java.util.Base64.getEncoder().encodeToString(authString.getBytes('UTF-8'))
 
                     def jiraBody = groovy.json.JsonOutput.toJson([
                         fields: [
