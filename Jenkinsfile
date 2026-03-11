@@ -51,28 +51,45 @@ pipeline {
                     bat 'terraform show -no-color tfplan.out > plan_readable.txt'
                     archiveArtifacts artifacts: 'plan_readable.txt', fingerprint: true
 
-                    def planOutput = readFile('plan_readable.txt').take(1000)
+                    // Build Basic auth header from existing credentials (no separate credential needed)
+                    def authString  = "${env.JIRA_USER}:${env.JIRA_TOKEN}"
+                    def authEncoded = authString.bytes.encodeBase64().toString()
 
-                    def jiraPayload = groovy.json.JsonOutput.toJson([
+                    // Build JSON body using Groovy map -> JsonOutput to avoid any formatting issues
+                    def jiraBody = groovy.json.JsonOutput.toJson([
                         fields: [
                             project    : [key: env.JIRA_PROJECT_KEY],
-                            summary    : "Terraform Drift Detected - Build #" + env.BUILD_NUMBER,
-                            description: "Drift detected.\n\nPlan:\n" + planOutput,
-                            issuetype  : [name: 'Bug'],
-                            priority   : [name: 'High']
+                            summary    : "Terraform Drift Detected - Build #${env.BUILD_NUMBER}",
+                            description: [
+                                type   : "doc",
+                                version: 1,
+                                content: [[
+                                    type   : "paragraph",
+                                    content: [[
+                                        type: "text",
+                                        text: "Drift detected in nightly Jenkins run. Build URL: ${env.BUILD_URL}"
+                                    ]]
+                                ]]
+                            ],
+                            issuetype  : [name: "Bug"],
+                            priority   : [name: "High"]
                         ]
                     ])
 
                     def response = httpRequest(
-                        url           : env.JIRA_URL + '/rest/api/3/issue',
-                        httpMode      : 'POST',
-                        authentication: 'jira-basic-auth',
-                        contentType   : 'APPLICATION_JSON',
-                        requestBody   : jiraPayload
+                        url                : "${env.JIRA_URL}/rest/api/3/issue",
+                        httpMode           : 'POST',
+                        customHeaders      : [
+                            [name: 'Authorization', value: "Basic ${authEncoded}"],
+                            [name: 'Content-Type',  value: 'application/json']
+                        ],
+                        requestBody        : jiraBody,
+                        validResponseCodes : '200:201'
                     )
 
                     def jiraIssue = readJSON text: response.content
                     env.JIRA_TICKET = jiraIssue.key
+                    echo "Jira ticket created: ${env.JIRA_TICKET}"
                 }
             }
         }
