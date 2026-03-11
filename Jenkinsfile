@@ -4,17 +4,21 @@ pipeline {
     triggers {
         cron('0 2 * * *')
     }
-	
-	tools {
-    terraform 'Terraform'
-	}
+
+    tools {
+        terraform 'Terraform'
+    }
 
     environment {
         SLACK_CHANNEL    = '#all-toshibaworkspace'
-        JIRA_URL         = 'https://arti-devops.atlassian.net/'
+        JIRA_URL         = 'https://arti-devops.atlassian.net'
         JIRA_PROJECT_KEY = 'MyDevopsSpace'
         JIRA_USER        = credentials('jira-email')
         JIRA_TOKEN       = credentials('jira-api-token')
+        ARM_CLIENT_ID       = credentials('azure-client-id')
+        ARM_CLIENT_SECRET   = credentials('azure-client-secret')
+        ARM_TENANT_ID       = credentials('azure-tenant-id')
+        ARM_SUBSCRIPTION_ID = credentials('azure-subscription-id')
     }
 
     stages {
@@ -24,26 +28,22 @@ pipeline {
 
         stage('Terraform Init') {
             steps {
-                withCredentials([azureServicePrincipal('azure-sp')]) {
-                    sh 'terraform init'
-                }
+                sh 'terraform init'
             }
         }
 
         stage('Drift Detection') {
             steps {
-                withCredentials([azureServicePrincipal('azure-sp')]) {
-                    script {
-                        def exitCode = sh(
-                            script: '''
-                                terraform plan -detailed-exitcode \
-                                  -out=tfplan.out 2>&1 | tee plan_output.txt
-                                exit $?
-                            ''',
-                            returnStatus: true
-                        )
-                        env.TF_EXIT_CODE = exitCode.toString()
-                    }
+                script {
+                    def exitCode = sh(
+                        script: '''
+                            terraform plan -detailed-exitcode \
+                              -out=tfplan.out 2>&1 | tee plan_output.txt
+                            exit $?
+                        ''',
+                        returnStatus: true
+                    )
+                    env.TF_EXIT_CODE = exitCode.toString()
                 }
             }
         }
