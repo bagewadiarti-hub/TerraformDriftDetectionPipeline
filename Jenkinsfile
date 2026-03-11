@@ -6,7 +6,7 @@ pipeline {
     }
 
     tools {
-        terraform 'Terraform'
+        terraform 'terraform'
     }
 
     environment {
