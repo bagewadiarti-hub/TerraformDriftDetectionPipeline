@@ -12,7 +12,7 @@ pipeline {
     environment {
         SLACK_CHANNEL    = '#all-toshibaworkspace'
         JIRA_URL         = 'https://arti-devops.atlassian.net'
-        JIRA_PROJECT_KEY = 'MyDevopsSpace'
+        JIRA_PROJECT_KEY = 'IT'
         JIRA_USER        = credentials('jira-email')
         JIRA_TOKEN       = credentials('jira-api-token')
         ARM_CLIENT_ID       = credentials('azure-client-id')
