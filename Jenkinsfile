@@ -149,7 +149,7 @@ pipeline {
                                     ]]
                                 ]]
                             ],
-                            issuetype  : [name: "Bug"],
+                            issuetype  : [name: "Task"],
                             priority   : [name: "High"]
                         ]
                     ])
