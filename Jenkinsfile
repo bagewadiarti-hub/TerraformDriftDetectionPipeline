@@ -68,9 +68,11 @@ pipeline {
                               "Check 'jira-email' and 'jira-api-token' credentials.\n" +
                               "Response: ${authCheck.content}")
                     }
-                    // ── readJSON replaced with JsonSlurper ──
-                    def me = new groovy.json.JsonSlurper().parseText(authCheck.content)
-                    echo "Jira auth OK — logged in as: ${me.emailAddress}"
+                    // ── Extract only the String value needed, discard the LazyMap immediately ──
+                    String emailAddress = new groovy.json.JsonSlurper()
+                                            .parseText(authCheck.content)
+                                            .emailAddress as String
+                    echo "Jira auth OK — logged in as: ${emailAddress}"
 
                     // ── Check 2: Validate project key ──
                     echo "=== Checking Jira project key: ${env.JIRA_PROJECT_KEY} ==="
@@ -83,14 +85,15 @@ pipeline {
                         ],
                         validResponseCodes: '100:599'
                     )
-                    echo "Project check status: ${projectCheck.status}"
-
                     if (projectCheck.status != 200) {
                         error("Jira project '${env.JIRA_PROJECT_KEY}' not found (${projectCheck.status}).\n" +
                               "Response: ${projectCheck.content}")
                     }
-                    def project = new groovy.json.JsonSlurper().parseText(projectCheck.content)
-                    echo "Jira project found: '${project.name}' (key: ${project.key})"
+                    // ── Extract only String values, discard the LazyMap immediately ──
+                    String projectName = new groovy.json.JsonSlurper()
+                                            .parseText(projectCheck.content)
+                                            .name as String
+                    echo "Jira project found: '${projectName}' (key: ${env.JIRA_PROJECT_KEY})"
 
                     // ── Check 3: List available issue types ──
                     echo "=== Checking issue types for project ${env.JIRA_PROJECT_KEY} ==="
@@ -106,10 +109,12 @@ pipeline {
                         validResponseCodes: '100:599'
                     )
                     if (metaCheck.status == 200) {
-                        def meta       = new groovy.json.JsonSlurper().parseText(metaCheck.content)
-                        def issueTypes = meta.projects[0]?.issuetypes?.collect { it.name } ?: []
+                        // ── Extract to plain List<String>, discard the LazyMap immediately ──
+                        List<String> issueTypes = new groovy.json.JsonSlurper()
+                                            .parseText(metaCheck.content)
+                                            .projects[0]?.issuetypes
+                                            ?.collect { it.name as String } ?: []
                         echo "Available issue types: ${issueTypes}"
-
                         if (!issueTypes.contains('Bug')) {
                             echo "WARNING: 'Bug' not found. Update issuetype in Handle Drift to one of: ${issueTypes}"
                         } else {
@@ -169,9 +174,11 @@ pipeline {
                               "Response: ${response.content}")
                     }
 
-                    // ── readJSON replaced with JsonSlurper ──
-                    def jiraIssue = new groovy.json.JsonSlurper().parseText(response.content)
-                    env.JIRA_TICKET = jiraIssue.key
+                    // ── Extract only the ticket key String, discard the LazyMap immediately ──
+                    String ticketKey = new groovy.json.JsonSlurper()
+                                        .parseText(response.content)
+                                        .key as String
+                    env.JIRA_TICKET = ticketKey
                     echo "Jira ticket created: ${env.JIRA_TICKET}"
                 }
             }
@@ -181,8 +188,8 @@ pipeline {
     post {
         always {
             script {
-                def exitCode = env.TF_EXIT_CODE ?: 'unknown'
-                def color    = exitCode == '0' ? 'good' : exitCode == '2' ? 'danger' : 'warning'
+                def exitCode  = env.TF_EXIT_CODE ?: 'unknown'
+                def color     = exitCode == '0' ? 'good' : exitCode == '2' ? 'danger' : 'warning'
                 def statusMsg = exitCode == '0'
                     ? ':white_check_mark: *No Drift Detected*'
                     : exitCode == '2'
