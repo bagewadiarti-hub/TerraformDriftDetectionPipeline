@@ -44,7 +44,6 @@ pipeline {
             }
         }
 
-        // ── Validates Jira auth, project key, and issue types before creating ticket ──
         stage('Validate Jira') {
             when { expression { env.TF_EXIT_CODE == '2' } }
             steps {
@@ -53,7 +52,7 @@ pipeline {
                     String authEncoded = java.util.Base64.getEncoder()
                                             .encodeToString(authString.getBytes('UTF-8'))
 
-                    // ── Check 1: Validate credentials via /myself ──
+                    // ── Check 1: Validate credentials ──
                     echo "=== Checking Jira credentials ==="
                     def authCheck = httpRequest(
                         url           : env.JIRA_URL + '/rest/api/3/myself',
@@ -64,17 +63,16 @@ pipeline {
                         ],
                         validResponseCodes: '100:599'
                     )
-                    echo "Auth check status: ${authCheck.status}"
-                    echo "Auth check body:   ${authCheck.content}"
-
                     if (authCheck.status != 200) {
                         error("Jira auth FAILED (${authCheck.status}). " +
-                              "Check 'jira-email' and 'jira-api-token' credentials in Jenkins.")
+                              "Check 'jira-email' and 'jira-api-token' credentials.\n" +
+                              "Response: ${authCheck.content}")
                     }
-                    def me = readJSON text: authCheck.content
+                    // ── readJSON replaced with JsonSlurper ──
+                    def me = new groovy.json.JsonSlurper().parseText(authCheck.content)
                     echo "Jira auth OK — logged in as: ${me.emailAddress}"
 
-                    // ── Check 2: Validate project key exists ──
+                    // ── Check 2: Validate project key ──
                     echo "=== Checking Jira project key: ${env.JIRA_PROJECT_KEY} ==="
                     def projectCheck = httpRequest(
                         url           : env.JIRA_URL + '/rest/api/3/project/' + env.JIRA_PROJECT_KEY,
@@ -86,16 +84,15 @@ pipeline {
                         validResponseCodes: '100:599'
                     )
                     echo "Project check status: ${projectCheck.status}"
-                    echo "Project check body:   ${projectCheck.content}"
 
                     if (projectCheck.status != 200) {
-                        error("Jira project '${env.JIRA_PROJECT_KEY}' not found (${projectCheck.status}). " +
-                              "The project key must be the short uppercase code shown in the Jira URL.")
+                        error("Jira project '${env.JIRA_PROJECT_KEY}' not found (${projectCheck.status}).\n" +
+                              "Response: ${projectCheck.content}")
                     }
-                    def project = readJSON text: projectCheck.content
+                    def project = new groovy.json.JsonSlurper().parseText(projectCheck.content)
                     echo "Jira project found: '${project.name}' (key: ${project.key})"
 
-                    // ── Check 3: List available issue types for this project ──
+                    // ── Check 3: List available issue types ──
                     echo "=== Checking issue types for project ${env.JIRA_PROJECT_KEY} ==="
                     def metaCheck = httpRequest(
                         url           : env.JIRA_URL + '/rest/api/3/issue/createmeta' +
@@ -108,22 +105,18 @@ pipeline {
                         ],
                         validResponseCodes: '100:599'
                     )
-                    echo "Issue type check status: ${metaCheck.status}"
-
                     if (metaCheck.status == 200) {
-                        def meta       = readJSON text: metaCheck.content
+                        def meta       = new groovy.json.JsonSlurper().parseText(metaCheck.content)
                         def issueTypes = meta.projects[0]?.issuetypes?.collect { it.name } ?: []
                         echo "Available issue types: ${issueTypes}"
 
                         if (!issueTypes.contains('Bug')) {
-                            echo "WARNING: 'Bug' issue type not found in project '${env.JIRA_PROJECT_KEY}'. " +
-                                 "Update issuetype in Handle Drift stage to one of: ${issueTypes}"
+                            echo "WARNING: 'Bug' not found. Update issuetype in Handle Drift to one of: ${issueTypes}"
                         } else {
                             echo "Issue type 'Bug' confirmed available."
                         }
                     }
 
-                    // Store encoded auth for reuse in Handle Drift — avoids re-encoding
                     env.JIRA_AUTH_ENCODED = authEncoded
                 }
             }
@@ -157,8 +150,6 @@ pipeline {
                     ])
 
                     echo "=== Creating Jira issue ==="
-                    echo "Request body: ${jiraBody}"
-
                     def response = httpRequest(
                         url           : env.JIRA_URL + '/rest/api/3/issue',
                         httpMode      : 'POST',
@@ -167,7 +158,7 @@ pipeline {
                             [name: 'Content-Type',  value: 'application/json']
                         ],
                         requestBody        : jiraBody,
-                        validResponseCodes : '100:599'   // capture full error instead of aborting
+                        validResponseCodes : '100:599'
                     )
 
                     echo "Jira response code: ${response.status}"
@@ -175,14 +166,11 @@ pipeline {
 
                     if (response.status != 200 && response.status != 201) {
                         error("Failed to create Jira issue (${response.status}).\n" +
-                              "Response: ${response.content}\n" +
-                              "Common fixes:\n" +
-                              "  - Issue type 'Bug' does not exist — check WARNING above\n" +
-                              "  - User lacks 'Create Issues' permission in project IT\n" +
-                              "  - Priority 'High' not available — try removing the priority field")
+                              "Response: ${response.content}")
                     }
 
-                    def jiraIssue = readJSON text: response.content
+                    // ── readJSON replaced with JsonSlurper ──
+                    def jiraIssue = new groovy.json.JsonSlurper().parseText(response.content)
                     env.JIRA_TICKET = jiraIssue.key
                     echo "Jira ticket created: ${env.JIRA_TICKET}"
                 }
@@ -194,7 +182,7 @@ pipeline {
         always {
             script {
                 def exitCode = env.TF_EXIT_CODE ?: 'unknown'
-                def color = exitCode == '0' ? 'good' : exitCode == '2' ? 'danger' : 'warning'
+                def color    = exitCode == '0' ? 'good' : exitCode == '2' ? 'danger' : 'warning'
                 def statusMsg = exitCode == '0'
                     ? ':white_check_mark: *No Drift Detected*'
                     : exitCode == '2'
